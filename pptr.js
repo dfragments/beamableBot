@@ -33,11 +33,11 @@ async function readFiles() {
 }
 
 async function initBrowserSession(cookie, proxyUrl) {
-    const parsedProxy = new URL(proxyUrl);
+    const parsedProxy = proxyUrl ? new URL(proxyUrl) : null;
     const browser = await puppeteer.launch({
         headless: false,
         args: [
-            `--proxy-server=${parsedProxy.hostname}:${parsedProxy.port}`,
+            !parsedProxy ? '' : `--proxy-server=${parsedProxy.hostname}:${parsedProxy.port}`,
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--window-size=1200,800'  // 新增窗口尺寸参数
@@ -64,16 +64,43 @@ async function initBrowserSession(cookie, proxyUrl) {
     });
 
     await browser.setCookie(...cookies);
-    
+
     const page = await browser.newPage();
-    
+
     // 代理认证
-    await page.authenticate({
-        username: parsedProxy.username,
-        password: parsedProxy.password
-    });
+
+    if (parsedProxy) {
+        await page.authenticate({
+            username: parsedProxy.username,
+            password: parsedProxy.password
+        });
+    }
 
     return { browser, page };
+}
+
+async function getCheckInPage(page) {
+    try {
+        await page.goto('https://hub.beamable.network/modules/dailycheckin', {
+            waitUntil: 'networkidle2',
+            timeout: 30000
+        });
+
+        // 等待任务列表加载
+        await page.waitForSelector('#moduleGriddedContainer', {
+            timeout: 15000
+        });
+
+        await sleep(5000); // 等待3秒以确保页面完全加载
+
+        // 提取button数据
+        const checkInButtons = await page.$$('#moduleGriddedContainer button');
+
+        return checkInButtons
+    } catch (error) {
+        logger(`获取Sold任务列表失败: ${error.message}`, 'error');
+        return [];
+    }
 }
 
 async function getQuestsSold(page) {
@@ -96,11 +123,11 @@ async function getQuestsSold(page) {
                 const name = div.querySelector('div.mb-4.flex.justify-between > div > div > .h3')?.innerText.trim();
                 const link = div.querySelector('a')?.href;
                 // 修正选择器逻辑
-                const isClaimed = Array.from(div.querySelectorAll('button, span, div')).some(el => 
+                const isClaimed = Array.from(div.querySelectorAll('button, span, div')).some(el =>
                     el.textContent.trim() === 'Claimed'
                 );
-                return { 
-                    name, 
+                return {
+                    name,
                     link,
                     keepGoingLink: link,
                     isClaimed,
@@ -118,7 +145,7 @@ async function getQuestsSold(page) {
 // 新增函数（添加在现有函数附近）
 async function getLaunchQuests(page) {
     try {
-        await page.goto('https://icanhazip.com', {waitUntil: 'networkidle2'});
+        await page.goto('https://icanhazip.com', { waitUntil: 'networkidle2' });
         const publicIP = await page.$eval('pre', el => el.textContent.trim());
         console.log('当前代理IP:', publicIP); // 应该显示156.250.104.70
 
@@ -140,14 +167,14 @@ async function getLaunchQuests(page) {
                 const name = div.querySelector('div.mb-4.flex.justify-between > div > div > div')?.innerText.trim();
                 const link = div.querySelector('a')?.href;
                 // 修正选择器逻辑
-                const keepGoingButton = Array.from(div.querySelectorAll('button')).find(btn => 
-                    btn.textContent.trim() === 'Keep Going' || 
+                const keepGoingButton = Array.from(div.querySelectorAll('button')).find(btn =>
+                    btn.textContent.trim() === 'Keep Going' ||
                     btn.textContent.trim() === 'Claim Reward'
                 );
                 const isCompleted = keepGoingButton && !keepGoingButton;
                 const keepGoingLink = keepGoingButton?.closest('a')?.href;
-                return { 
-                    name, 
+                return {
+                    name,
                     link,
                     isCompleted,
                     keepGoingLink,
@@ -185,13 +212,13 @@ async function completeQuest(page, questLink) {
                         text: link.textContent.trim()
                     }));
             });
-    
+
             if (completedLinks.length > 0) {
                 logger(`找到 ${completedLinks.length} 个 COMPLETED 链接`, 'debug');
                 const claimButtons = await page.$$('button');
 
                 logger(`找到 ${claimButtons.length} 个 按钮`, 'debug');
-                
+
                 // 过滤出符合条件的按钮
                 const filteredButtons = [];
                 for (const button of claimButtons) {
@@ -202,23 +229,23 @@ async function completeQuest(page, questLink) {
                 }
 
                 if (filteredButtons?.length > 0) {
-                    await filteredButtons[0].evaluate(el => el.scrollIntoView({ 
-                        block: 'center', 
-                        inline: 'center' 
+                    await filteredButtons[0].evaluate(el => el.scrollIntoView({
+                        block: 'center',
+                        inline: 'center'
                     }));
-                    
+
                     // 添加点击前延迟
                     await sleep(1000);
-                    
+
                     // 执行点击操作
-                    await filteredButtons[0].click({ 
+                    await filteredButtons[0].click({
                         delay: 100,        // 模拟人类点击延迟
                         force: true,       // 强制点击，即使元素被遮挡
                         waitForNetworkIdle: true  // 等待网络请求完成
                     });
 
                     logger('已点击按钮，奖励领取成功', 'success');
-                    
+
                     // 等待点击后的页面变化
                     await page.waitForNetworkIdle({ idleTime: 1000 });
                     await sleep(5000);
@@ -237,7 +264,7 @@ async function completeQuest(page, questLink) {
         // 新增点击逻辑
         await Promise.race([
             page.waitForSelector('#moduleGriddedContainer', { timeout: 15000 }),
-            page.waitForSelector('//*[contains(text(), "Click the Link")]', { 
+            page.waitForSelector('//*[contains(text(), "Click the Link")]', {
                 visible: true,
                 timeout: 5000,
                 xpath: true // 明确指定使用 XPath
@@ -247,7 +274,7 @@ async function completeQuest(page, questLink) {
         // 如果找到需要点击的链接
         const elements = await page.$$('div, a, button'); // 根据实际情况调整元素类型
         const clickLinks = [];
-        
+
         for (const el of elements) {
             const text = await el.evaluate(node => node.textContent?.trim());
             if (text === 'Click the Link') {
@@ -259,10 +286,10 @@ async function completeQuest(page, questLink) {
 
             // 获取当前浏览器实例
             const browser = page.browser();
-            
+
             // 点击前记录当前标签页
             const originalPage = page;
-            
+
             // 设置新标签页监听
             const newPagePromise = new Promise(resolve => {
                 browser.once('targetcreated', async target => {
@@ -293,7 +320,7 @@ async function completeQuest(page, questLink) {
             await completeQuest(page, questLink);
         }
 
-    }   catch (error) {
+    } catch (error) {
         logger(`访问任务链接失败: ${error.message}`, 'error');
         return;
     }
@@ -307,37 +334,75 @@ async function main() {
             logger(`正在处理第 ${i + 1} 个账户`)
             const cookie = cookies[i]
             const { page, browser } = await initBrowserSession(cookie, proxies[i]);
-            const questList = await getLaunchQuests(page);
-            logger(`launchquests获取成功: ${questList.length}，已完成: ${questList.filter(q => q.isCompleted).length}个，未完成: ${questList.filter(q => !q.isCompleted).length}个，开始执行未完成任务`)
-            for (let j = 0; j < questList.length; j++) {
-                const quest = questList[j];
-                if (!quest.isCompleted) {
-                    if(quest.link) {
-                        logger(`任务 ${j + 1} 未完成, 前往完成: ${quest.link}`)
-                        await completeQuest(page, quest.link);
-                        logger(`任务 ${j + 1} 已完成，等待 10 秒进入下一个任务`)
-                        logger("等待 10 秒进入下一个任务", 'debug');
-                        await sleep(10000);
+            // const questList = await getLaunchQuests(page);
+            // logger(`launchquests获取成功: ${questList.length}，已完成: ${questList.filter(q => q.isCompleted).length}个，未完成: ${questList.filter(q => !q.isCompleted).length}个，开始执行未完成任务`)
+            // for (let j = 0; j < questList.length; j++) {
+            //     const quest = questList[j];
+            //     if (!quest.isCompleted) {
+            //         if(quest.link) {
+            //             logger(`任务 ${j + 1} 未完成, 前往完成: ${quest.link}`)
+            //             await completeQuest(page, quest.link);
+            //             logger(`任务 ${j + 1} 已完成，等待 10 秒进入下一个任务`)
+            //             logger("等待 10 秒进入下一个任务", 'debug');
+            //             await sleep(10000);
+            //         }
+            //     }
+            // }
+            // logger('所有launch任务已完成，开始查询questsold任务列表', 'debug')
+
+            // const questsoldList = await getQuestsSold(page);
+            // logger(`soldquests获取成功: ${questsoldList.length}，已完成: ${questsoldList.filter(q => q.isClaimed).length}个，未完成: ${questList.filter(q => !q.isClaimed).length}个，开始执行未完成任务`)
+            // for (let j = 0; j < questsoldList.length; j++) {
+            //     const quest = questsoldList[j];
+            //     if (!quest.isClaimed) {
+            //         if(quest.link) {
+            //             logger(`任务 ${j + 1} 未完成, 前往完成: ${quest.link}`)
+            //             await completeQuest(page, quest.link);
+            //             logger(`任务 ${j + 1} 已完成，等待 10 秒进入下一个任务`)
+            //             logger("等待 10 秒进入下一个任务", 'debug');
+            //             await sleep(10000);
+            //         }
+            //     }
+            // }
+            logger('所有questsold任务已完成，开始查询签到状态', 'debug')
+            const checkInButtons = await getCheckInPage(page);
+            console.log(checkInButtons, 'checkInButtons')
+            if (checkInButtons?.length > 0) {
+                const lastButton = checkInButtons[checkInButtons.length - 1];
+                try {
+                    // 点击最后一个按钮
+                    await lastButton.click();
+                    logger('已点击最后一个按钮，展开所有日期', 'success');
+
+                    await sleep(5000); // 等待页面加载
+
+                    const claimButtons = await page.$$('#moduleGriddedContainer button');
+
+                    if (claimButtons?.length > 0) {
+                        for (const btn of claimButtons) {
+                            const isDisabled = await btn.evaluate(el => el.hasAttribute('disabled'));
+                            if (isDisabled) {
+                                logger('发现不可用按钮，停止领取操作', 'warn');
+                                break; // 直接跳出循环
+                            }
+                            try {
+                                await btn.click({
+                                    delay: 100,
+                                    force: true
+                                });
+                                logger('成功领取每日签到奖励', 'success');
+                                await sleep(3000); // 等待领取动画完成
+                            } catch (error) {
+                                logger(`领取失败: ${error.message}`, 'error');
+                            }
+                        }
+                    } else {
+                        logger('没有可领取的签到奖励', 'warn');
                     }
+                } catch (error) {
+                    logger(`点击最后一个按钮失败: ${error.message}`, 'error');
                 }
             }
-            logger('所有launch任务已完成，开始查询questsold任务列表', 'debug')
-
-            const questsoldList = await getQuestsSold(page);
-            logger(`soldquests获取成功: ${questsoldList.length}，已完成: ${questsoldList.filter(q => q.isClaimed).length}个，未完成: ${questList.filter(q => !q.isClaimed).length}个，开始执行未完成任务`)
-            for (let j = 0; j < questsoldList.length; j++) {
-                const quest = questsoldList[j];
-                if (!quest.isClaimed) {
-                    if(quest.link) {
-                        logger(`任务 ${j + 1} 未完成, 前往完成: ${quest.link}`)
-                        await completeQuest(page, quest.link);
-                        logger(`任务 ${j + 1} 已完成，等待 10 秒进入下一个任务`)
-                        logger("等待 10 秒进入下一个任务", 'debug');
-                        await sleep(10000);
-                    }
-                }
-            }
-
         }
         logger("等待1天后继续每日任务", 'warn')
         await new Promise(resolve => setTimeout(resolve, 24 * 60 * 1000))
