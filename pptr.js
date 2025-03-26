@@ -35,7 +35,7 @@ async function readFiles() {
 async function initBrowserSession(cookie, proxyUrl) {
     const parsedProxy = proxyUrl ? new URL(proxyUrl) : null;
     const browser = await puppeteer.launch({
-        headless: false,
+        headless: true,
         args: [
             !parsedProxy ? '' : `--proxy-server=${parsedProxy.hostname}:${parsedProxy.port}`,
             '--no-sandbox',
@@ -334,36 +334,36 @@ async function main() {
             logger(`正在处理第 ${i + 1} 个账户`)
             const cookie = cookies[i]
             const { page, browser } = await initBrowserSession(cookie, proxies[i]);
-            // const questList = await getLaunchQuests(page);
-            // logger(`launchquests获取成功: ${questList.length}，已完成: ${questList.filter(q => q.isCompleted).length}个，未完成: ${questList.filter(q => !q.isCompleted).length}个，开始执行未完成任务`)
-            // for (let j = 0; j < questList.length; j++) {
-            //     const quest = questList[j];
-            //     if (!quest.isCompleted) {
-            //         if(quest.link) {
-            //             logger(`任务 ${j + 1} 未完成, 前往完成: ${quest.link}`)
-            //             await completeQuest(page, quest.link);
-            //             logger(`任务 ${j + 1} 已完成，等待 10 秒进入下一个任务`)
-            //             logger("等待 10 秒进入下一个任务", 'debug');
-            //             await sleep(10000);
-            //         }
-            //     }
-            // }
-            // logger('所有launch任务已完成，开始查询questsold任务列表', 'debug')
+            const questList = await getLaunchQuests(page);
+            logger(`launchquests获取成功: ${questList.length}，已完成: ${questList.filter(q => q.isCompleted).length}个，未完成: ${questList.filter(q => !q.isCompleted).length}个，开始执行未完成任务`)
+            for (let j = 0; j < questList.length; j++) {
+                const quest = questList[j];
+                if (!quest.isCompleted) {
+                    if(quest.link) {
+                        logger(`任务 ${j + 1} 未完成, 前往完成: ${quest.link}`)
+                        await completeQuest(page, quest.link);
+                        logger(`任务 ${j + 1} 已完成，等待 10 秒进入下一个任务`)
+                        logger("等待 10 秒进入下一个任务", 'debug');
+                        await sleep(10000);
+                    }
+                }
+            }
+            logger('所有launch任务已完成，开始查询questsold任务列表', 'debug')
 
-            // const questsoldList = await getQuestsSold(page);
-            // logger(`soldquests获取成功: ${questsoldList.length}，已完成: ${questsoldList.filter(q => q.isClaimed).length}个，未完成: ${questList.filter(q => !q.isClaimed).length}个，开始执行未完成任务`)
-            // for (let j = 0; j < questsoldList.length; j++) {
-            //     const quest = questsoldList[j];
-            //     if (!quest.isClaimed) {
-            //         if(quest.link) {
-            //             logger(`任务 ${j + 1} 未完成, 前往完成: ${quest.link}`)
-            //             await completeQuest(page, quest.link);
-            //             logger(`任务 ${j + 1} 已完成，等待 10 秒进入下一个任务`)
-            //             logger("等待 10 秒进入下一个任务", 'debug');
-            //             await sleep(10000);
-            //         }
-            //     }
-            // }
+            const questsoldList = await getQuestsSold(page);
+            logger(`soldquests获取成功: ${questsoldList.length}，已完成: ${questsoldList.filter(q => q.isClaimed).length}个，未完成: ${questList.filter(q => !q.isClaimed).length}个，开始执行未完成任务`)
+            for (let j = 0; j < questsoldList.length; j++) {
+                const quest = questsoldList[j];
+                if (!quest.isClaimed) {
+                    if(quest.link) {
+                        logger(`任务 ${j + 1} 未完成, 前往完成: ${quest.link}`)
+                        await completeQuest(page, quest.link);
+                        logger(`任务 ${j + 1} 已完成，等待 10 秒进入下一个任务`)
+                        logger("等待 10 秒进入下一个任务", 'debug');
+                        await sleep(10000);
+                    }
+                }
+            }
             logger('所有questsold任务已完成，开始查询签到状态', 'debug')
             const checkInButtons = await getCheckInPage(page);
             console.log(checkInButtons, 'checkInButtons')
