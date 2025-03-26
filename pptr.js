@@ -77,7 +77,42 @@ async function initBrowserSession(cookie, proxyUrl) {
 }
 
 async function getQuestsSold(page) {
-    
+    try {
+        await page.goto('https://hub.beamable.network/modules/questsold', {
+            waitUntil: 'networkidle2',
+            timeout: 30000
+        });
+
+        // 等待任务列表加载
+        await page.waitForSelector('#moduleGriddedContainer', {
+            timeout: 15000
+        });
+
+        await sleep(5000); // 等待3秒以确保页面完全加载
+
+        // 提取任务数据
+        const quests = await page.$$eval('#moduleGriddedContainer > div > div.quests div.bg-content', divs => {
+            return divs.map(div => {
+                const name = div.querySelector('div.mb-4.flex.justify-between > div > div > .h3')?.innerText.trim();
+                const link = div.querySelector('a')?.href;
+                // 修正选择器逻辑
+                const isClaimed = Array.from(div.querySelectorAll('button, span, div')).some(el => 
+                    el.textContent.trim() === 'Claimed'
+                );
+                return { 
+                    name, 
+                    link,
+                    keepGoingLink: link,
+                    isClaimed,
+                };
+            });
+        });
+
+        return quests
+    } catch (error) {
+        logger(`获取Sold任务列表失败: ${error.message}`, 'error');
+        return [];
+    }
 }
 
 // 新增函数（添加在现有函数附近）
@@ -127,7 +162,7 @@ async function getLaunchQuests(page) {
     }
 }
 
-async function completeLaunchQuest(page, questLink) {
+async function completeQuest(page, questLink) {
     try {
         await page.goto(questLink, {
             waitUntil: 'networkidle2',
@@ -255,7 +290,7 @@ async function completeLaunchQuest(page, questLink) {
             await originalPage.bringToFront();
             await originalPage.reload({ waitUntil: 'networkidle2', timeout: 15000 });
             await sleep(3000); // 等待5秒以确保页面完全加载
-            await completeLaunchQuest(page, questLink);
+            await completeQuest(page, questLink);
         }
 
     }   catch (error) {
@@ -279,16 +314,29 @@ async function main() {
                 if (!quest.isCompleted) {
                     if(quest.link) {
                         logger(`任务 ${j + 1} 未完成, 前往完成: ${quest.link}`)
-                        await completeLaunchQuest(page, quest.link);
+                        await completeQuest(page, quest.link);
                         logger(`任务 ${j + 1} 已完成，等待 10 秒进入下一个任务`)
                         logger("等待 10 秒进入下一个任务", 'debug');
                         await sleep(10000);
                     }
                 }
             }
-            logger('所有任务已完成，开始查询questsold任务列表', 'debug')
+            logger('所有launch任务已完成，开始查询questsold任务列表', 'debug')
 
             const questsoldList = await getQuestsSold(page);
+            logger(`soldquests获取成功: ${questsoldList.length}，已完成: ${questsoldList.filter(q => q.isClaimed).length}个，未完成: ${questList.filter(q => !q.isClaimed).length}个，开始执行未完成任务`)
+            for (let j = 0; j < questsoldList.length; j++) {
+                const quest = questsoldList[j];
+                if (!quest.isClaimed) {
+                    if(quest.link) {
+                        logger(`任务 ${j + 1} 未完成, 前往完成: ${quest.link}`)
+                        await completeQuest(page, quest.link);
+                        logger(`任务 ${j + 1} 已完成，等待 10 秒进入下一个任务`)
+                        logger("等待 10 秒进入下一个任务", 'debug');
+                        await sleep(10000);
+                    }
+                }
+            }
 
         }
         logger("等待1天后继续每日任务", 'warn')
