@@ -76,6 +76,10 @@ async function initBrowserSession(cookie, proxyUrl) {
     return { browser, page };
 }
 
+async function getQuestsSold(page) {
+    
+}
+
 // 新增函数（添加在现有函数附近）
 async function getLaunchQuests(page) {
     try {
@@ -282,6 +286,10 @@ async function main() {
                     }
                 }
             }
+            logger('所有任务已完成，开始查询questsold任务列表', 'debug')
+
+            const questsoldList = await getQuestsSold(page);
+
         }
         logger("等待1天后继续每日任务", 'warn')
         await new Promise(resolve => setTimeout(resolve, 24 * 60 * 1000))
